@@ -1,48 +1,49 @@
-# service
+# Task Delay Service
 
-Для запуска проекта Django, включая установку зависимостей, выполните следующие шаги:
+Рассылки на Django + DRF + Celery. Фильтрация клиентов по тегам/кодам оператора/списку телефонов, контроль временных окон, Docker-компоуз с Postgres/Redis и воркером Celery.
 
-1. Клонирование репозитория:
+## Возможности
+- Планирование рассылки по `start_datetime`/`end_datetime` и дневному интервалу времени.
+- Фильтр получателей: тег кампании, `mobile_operator_code`, список телефонов в `client_filter`.
+- Celery-воркер + Redis (по умолчанию), синхронный режим для тестов через `CELERY_TASK_ALWAYS_EAGER`.
+- Docker Compose: api + worker + Postgres + Redis.
+- Тесты на pytest/DRF, примеры окружения в `.env.example`.
 
-> git clone https://gitlab.com/velikiykeamil/service.git
+## Локальный запуск
+```bash
+python -m venv .venv
+. .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+cp .env.example .env  # и задайте DJANGO_SECRET_KEY
+python manage.py migrate
+python manage.py runserver
+```
 
-> cd Work
+Запуск Celery-воркера (локально):
+```bash
+celery -A Work worker -l info
+```
 
-2. Создание виртуальной среды:
-> python -m myenv venv
+## Docker Compose
+```bash
+docker-compose up --build
+```
+Сервисы: `api` (8000), `worker`, `db` (Postgres 16), `redis` (6379). Настройки берутся из `.env` + переменных в `docker-compose.yml`.
 
-3. Активация виртуальной среды:
+## Переменные окружения
+- `DJANGO_SECRET_KEY` — секретный ключ (обязательно в проде).
+- `DJANGO_DEBUG` — `True/False`.
+- `DJANGO_ALLOWED_HOSTS` — список хостов через запятую.
+- `DATABASE_URL` — строка подключения к БД (по умолчанию SQLite).
+- `DJANGO_TIME_ZONE` — часовой пояс (по умолчанию UTC).
+- `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` — брокер и backend задач (по умолчанию Redis `redis://localhost:6379/0`).
 
-Для Windows:
-> myenv\Scripts\activate
+## Тесты
+```bash
+pytest
+```
 
-Для Linux/Mac:
-> source myenv/bin/activate
-
-4. Установка зависимостей:
-> pip install -r requirements.txt
-
-5. Применение миграций:
-> python manage.py migrate
-
-6. Запуск сервера:
-
-> python manage.py runserver
-
-После выполнения этих шагов сервер должен быть запущен на http://127.0.0.1:8000/.
-
-7. Перейдите к документации API:
-https://documenter.getpostman.com/view/31341438/2s9YeBftxe
-
-Примечание:
-Убедитесь, что у вас установлен Python версии, указанной в requirements.txt.
-Перед выполнением шагов установки, убедитесь, что ваша виртуальная среда активирована.
-Если используете внешний сервис (например, PostgreSQL), удостоверьтесь, что он запущен и настроен правильно.
-Если вы используете внешний сервис для отправки сообщений, проверьте, что он доступен и настроен в вашем проекте.
-Теперь у вас должен быть работающий сервер.
-
-Опционально:
-
-1) Настроен файл docker-compose для удобного развертывания всех сервисов (docker-compose.yml; Dockerfile).
-2) Внедрён администраторский Web UI (admin.py).
-3) Реализована отложенная отправка при проблемах с внешним сервисом (celery_config.py; tasks.py).
+## Полезно знать
+- `.gitignore` исключает виртуалки, логи и артефакты сборки.
+- Старый `celery_config.py` проксирует к `Work.celery` для совместимости, используйте `celery -A Work worker`.

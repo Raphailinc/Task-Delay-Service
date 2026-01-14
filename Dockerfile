@@ -1,20 +1,18 @@
-# Используем официальный образ Python
-FROM python:3.12
+FROM python:3.12-slim
 
-# Устанавливаем PostgreSQL client
-RUN apt-get update && apt-get install -y postgresql-client
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Устанавливаем рабочую директорию
-WORKDIR /Work
+WORKDIR /app
 
-# Копируем файлы проекта в контейнер
-COPY . /Work
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# Устанавливаем pipenv
-RUN pip install pipenv
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r /app/requirements.txt
 
-# Устанавливаем зависимости
-RUN pipenv install
+COPY . /app
 
-# Команда для запуска Django
-CMD ["pipenv", "run", "python", "manage.py", "runserver", "0.0.0.0:8000"]
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

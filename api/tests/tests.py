@@ -1,135 +1,94 @@
-# api/tests/tests.py
-
-import logging
-import time
-import json
 import pytest
-import asyncio
-from django.test import TestCase, Client
+from datetime import timedelta
+from django.test import override_settings
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
-from api.models import Client, Newsletter, Message
-from api.services import send_message_to_external_service
-import responses
-from celery import current_app
-from django_celery_results.models import TaskResult
-from channels.db import database_sync_to_async
-from django.db import connection
 
-logging.basicConfig(level=logging.DEBUG)
+from api.models import Client, Message, Newsletter
+from api.serializers import ClientSerializer
+from api.tasks import start_campaign_async
+from api.utils import campaign_recipients
 
-current_app.conf.CELERY_TASK_ALWAYS_EAGER = True
 
-class MyTestCase(TestCase):
-    def test_database_connection(self):
-        self.assertTrue(connection.is_usable())
+@pytest.fixture
+def api_client():
+    return APIClient()
 
-class ClientModelTest(TestCase):
-    def test_str_representation(self):
-        client = Client(phone_number='1234567890', operator_code='123', tag='test_tag', timezone='UTC')
-        self.assertEqual(str(client), '1234567890 - test_tag')
 
-class NewsletterModelTest(TestCase):
-    def test_str_representation(self):
-        newsletter = Newsletter(start_time=timezone.now(), end_time=timezone.now(),
-                                text_message='Test message', time_interval_start=timezone.now().time(),
-                                time_interval_end=timezone.now().time())
-        self.assertEqual(str(newsletter), f'Newsletter {newsletter.id}')
-
-class MessageModelTest(TestCase):
-    def test_str_representation(self):
-        message = Message(status='PENDING')
-        self.assertEqual(str(message), f'Message {message.id} - PENDING')
-
-class ExternalServiceTest(TestCase):
-    def setUp(self):
-        self.client = APIClient()
-
-    @pytest.mark.django_db
-    @pytest.mark.asyncio
-    async def test_send_message_to_external_service(self):
-        responses.add(responses.POST, 'https://probe.fbrq.cloud/send-message/', json={'status': 'success'}, status=200)
-
-        client = await database_sync_to_async(Client.objects.create)(
-            phone_number='1234567890', operator_code='123', tag='test_tag', timezone='UTC'
-        )
-        newsletter = Newsletter.objects.create(start_time=timezone.now(), end_time=timezone.now(),
-                                               text_message='Test message', time_interval_start=timezone.now().time(),
-                                               time_interval_end=timezone.now().time())
-        message = Message.objects.create(newsletter=newsletter, client=client)
-
-        message_status = await database_sync_to_async(Message.objects.first)().status
-        print(f"Message status after sending: {message_status}")
-
-        message = Message.objects.get(pk=message.id)
-        assert message.status == Message.Status.SENT
-
-class NewsletterViewTest(TestCase):
-    @pytest.mark.django_db
-    @pytest.mark.asyncio
-    async def test_create_newsletter_and_send_message(self):
-        # Асинхронный тест создания клиента
-        client_data = {"name": "John Doe", "email": "john@example.com"}
-        client_response = await self.client.post('/api/clients/', client_data, format='json')
-        assert client_response.status_code in [201, 400]
-
-        if client_response.status_code == 201:
-            # Асинхронный тест создания рассылки
-            newsletter_data = {"subject": "Test Subject", "content": "Test Content", "messages": [client_response.json()['id']]}
-            newsletter_response = await self.client.post('/api/newsletters/', newsletter_data, format='json')
-            assert newsletter_response.status_code == 201
-
-            # Асинхронный тест отправки сообщения
-            message_response = await self.client.post('/api/newsletters/1/send/', format='json')
-            assert message_response.status_code == 200
-
-            # Проверяем, что сообщение было успешно отправлено
-            message_id = message_response.data.get('id')
-
-            await send_message_to_external_service(message_id)
-
-            message = Message.objects.get(pk=message_id)
-            assert message.status == Message.Status.SENT
-
-    @pytest.mark.django_db
-    @pytest.mark.asyncio
-    async def test_create_newsletter(self):
-        # Асинхронный тест создания клиента
-        client_data = {
-            'phone_number': '1234567890',
-            'operator_code': '123',
-            'tag': 'test_tag',
-            'timezone': 'UTC',
+@pytest.mark.django_db
+def test_client_serializer_validates_phone_length():
+    serializer = ClientSerializer(
+        data={
+            "phone_number": "123",
+            "mobile_operator_code": "999",
+            "tag": "short",
+            "timezone": "UTC",
         }
-        client_response = await self.client.post('/api/clients/', client_data, format='json')
-        assert client_response.status_code == status.HTTP_201_CREATED
+    )
+    assert not serializer.is_valid()
+    assert "phone_number" in serializer.errors
 
-        if client_response.status_code == status.HTTP_201_CREATED:
-            # Асинхронный тест создания рассылки
-            newsletter_data = {
-                'start_time': str(timezone.now()),
-                'end_time': str(timezone.now()),
-                'text_message': 'Test message',
-                'time_interval_start': str(timezone.now().time()),
-                'time_interval_end': str(timezone.now().time()),
-                'messages': [client_response.json()['id']]
-            }
-            response = await self.client.post('/api/newsletters/', newsletter_data, format='json')
-            assert response.status_code == status.HTTP_201_CREATED
-            assert Newsletter.objects.count() == 1
 
-            # Добавим асинхронную задержку перед проверкой
-            await asyncio.sleep(1)
+@pytest.mark.django_db
+def test_campaign_recipients_filters_by_tag_and_phone():
+    tagged = Client.objects.create(phone_number="79000000001", mobile_operator_code="900", tag="vip", timezone="UTC")
+    tagged2 = Client.objects.create(phone_number="79000000002", mobile_operator_code="901", tag="vip", timezone="UTC")
+    other = Client.objects.create(phone_number="79000000003", mobile_operator_code="900", tag="common", timezone="UTC")
 
-            # Проверим, что создан объект Message
-            print(f"Number of messages created: {Message.objects.count()}")
-            assert Message.objects.count() == 1  # Обеспечить создание сообщения
+    campaign = Newsletter.objects.create(
+        start_datetime=timezone.now(),
+        end_datetime=timezone.now() + timedelta(hours=1),
+        text_message="Hello",
+        time_interval_start=timezone.now().time(),
+        time_interval_end=(timezone.now() + timedelta(minutes=30)).time(),
+        tag="vip",
+        client_filter={"phone_numbers": [other.phone_number]},
+    )
 
-    def test_get_newsletters(self):
-        Newsletter.objects.create(start_time=timezone.now(), end_time=timezone.now(),
-                                   text_message='Test message', time_interval_start=timezone.now().time(),
-                                   time_interval_end=timezone.now().time())
-        response = self.client.get('/api/newsletters/')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.json()), 1)
+    recipients = campaign_recipients(campaign)
+    assert sorted(recipients.values_list("phone_number", flat=True)) == sorted(
+        [tagged.phone_number, tagged2.phone_number, other.phone_number]
+    )
+
+
+@override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
+@pytest.mark.django_db
+def test_start_campaign_creates_messages_and_marks_sent():
+    client1 = Client.objects.create(phone_number="79000000001", mobile_operator_code="900", tag="vip", timezone="UTC")
+    client2 = Client.objects.create(phone_number="79000000002", mobile_operator_code="901", tag="vip", timezone="UTC")
+
+    now = timezone.now()
+    campaign = Newsletter.objects.create(
+        start_datetime=now - timedelta(minutes=1),
+        end_datetime=now + timedelta(hours=1),
+        text_message="Ping",
+        time_interval_start=(now - timedelta(minutes=5)).time(),
+        time_interval_end=(now + timedelta(minutes=5)).time(),
+        tag="vip",
+    )
+
+    start_campaign_async.delay(campaign.id)
+
+    assert Message.objects.count() == 2
+    assert set(Message.objects.values_list("status", flat=True)) == {"SENT"}
+
+
+@pytest.mark.django_db
+def test_campaign_stats_endpoint(api_client):
+    now = timezone.now()
+    campaign = Newsletter.objects.create(
+        start_datetime=now,
+        end_datetime=now + timedelta(hours=1),
+        text_message="Hello",
+        time_interval_start=now.time(),
+        time_interval_end=(now + timedelta(minutes=10)).time(),
+    )
+    client = Client.objects.create(phone_number="79000000004", mobile_operator_code="902", tag="stats", timezone="UTC")
+    Message.objects.create(campaign=campaign, client=client, message_text="Hello", status="SENT")
+
+    response = api_client.get(reverse("campaign-stats-detail", args=[campaign.id]))
+    assert response.status_code == status.HTTP_200_OK
+    body = response.json()
+    assert body["sent_messages"] == 1
