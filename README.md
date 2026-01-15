@@ -1,6 +1,6 @@
-# Task Delay Service
-
 ![CI](https://github.com/Raphailinc/Task-Delay-Service/actions/workflows/ci.yml/badge.svg)
+
+# Task Delay Service
 
 Рассылки на Django + DRF + Celery. Фильтрация клиентов по тегам/кодам оператора/списку телефонов, контроль временных окон, Docker-компоуз с Postgres/Redis и воркером Celery.
 
