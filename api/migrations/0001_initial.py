@@ -9,39 +9,52 @@ class Migration(migrations.Migration):
 
     initial = True
 
-    dependencies = [
-    ]
+    dependencies = []
 
     operations = [
         migrations.CreateModel(
-            name='Client',
+            name="Client",
             fields=[
-                ('id', models.AutoField(primary_key=True, serialize=False)),
-                ('phone_number', models.CharField(max_length=12, unique=True)),
-                ('operator_code', models.CharField(max_length=3)),
-                ('tag', models.CharField(max_length=255)),
-                ('timezone', models.CharField(max_length=255)),
+                ("id", models.AutoField(primary_key=True, serialize=False)),
+                ("phone_number", models.CharField(max_length=12, unique=True)),
+                ("operator_code", models.CharField(max_length=3)),
+                ("tag", models.CharField(max_length=255)),
+                ("timezone", models.CharField(max_length=255)),
             ],
         ),
         migrations.CreateModel(
-            name='Newsletter',
+            name="Newsletter",
             fields=[
-                ('id', models.AutoField(primary_key=True, serialize=False)),
-                ('start_time', models.DateTimeField()),
-                ('end_time', models.DateTimeField()),
-                ('text_message', models.TextField()),
-                ('time_interval_start', models.TimeField()),
-                ('time_interval_end', models.TimeField()),
+                ("id", models.AutoField(primary_key=True, serialize=False)),
+                ("start_time", models.DateTimeField()),
+                ("end_time", models.DateTimeField()),
+                ("text_message", models.TextField()),
+                ("time_interval_start", models.TimeField()),
+                ("time_interval_end", models.TimeField()),
             ],
         ),
         migrations.CreateModel(
-            name='Message',
+            name="Message",
             fields=[
-                ('id', models.AutoField(primary_key=True, serialize=False)),
-                ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
-                ('status', models.CharField(default='PENDING', max_length=50)),
-                ('client', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='api.client')),
-                ('newsletter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='messages', to='api.newsletter')),
+                ("id", models.AutoField(primary_key=True, serialize=False)),
+                ("created_at", models.DateTimeField(default=django.utils.timezone.now)),
+                ("status", models.CharField(default="PENDING", max_length=50)),
+                (
+                    "client",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="messages",
+                        to="api.client",
+                    ),
+                ),
+                (
+                    "newsletter",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="messages",
+                        to="api.newsletter",
+                    ),
+                ),
             ],
         ),
     ]

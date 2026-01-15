@@ -1,12 +1,13 @@
 # update_data.py
-import os
 import json
+import os
+
 import django
 
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "Work.settings")
 django.setup()
 
-from api.models import Newsletter
+from api.models import Newsletter  # noqa: E402
 
 newsletters = Newsletter.objects.all()
 

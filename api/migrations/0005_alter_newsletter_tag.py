@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0004_auto_20231127_1737'),
+        ("api", "0004_auto_20231127_1737"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='newsletter',
-            name='tag',
-            field=models.CharField(default='default_tag', max_length=500),
+            model_name="newsletter",
+            name="tag",
+            field=models.CharField(default="default_tag", max_length=500),
         ),
     ]

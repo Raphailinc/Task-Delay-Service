@@ -6,18 +6,18 @@ from django.db import migrations
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0008_alter_newsletter_client_filter'),
+        ("api", "0008_alter_newsletter_client_filter"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='newsletter',
-            old_name='end_time',
-            new_name='end_datetime',
+            model_name="newsletter",
+            old_name="end_time",
+            new_name="end_datetime",
         ),
         migrations.RenameField(
-            model_name='newsletter',
-            old_name='start_time',
-            new_name='start_datetime',
+            model_name="newsletter",
+            old_name="start_time",
+            new_name="start_datetime",
         ),
     ]

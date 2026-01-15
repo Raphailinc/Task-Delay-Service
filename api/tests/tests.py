@@ -1,5 +1,6 @@
-import pytest
 from datetime import timedelta
+
+import pytest
 from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -33,9 +34,15 @@ def test_client_serializer_validates_phone_length():
 
 @pytest.mark.django_db
 def test_campaign_recipients_filters_by_tag_and_phone():
-    tagged = Client.objects.create(phone_number="79000000001", mobile_operator_code="900", tag="vip", timezone="UTC")
-    tagged2 = Client.objects.create(phone_number="79000000002", mobile_operator_code="901", tag="vip", timezone="UTC")
-    other = Client.objects.create(phone_number="79000000003", mobile_operator_code="900", tag="common", timezone="UTC")
+    tagged = Client.objects.create(
+        phone_number="79000000001", mobile_operator_code="900", tag="vip", timezone="UTC"
+    )
+    tagged2 = Client.objects.create(
+        phone_number="79000000002", mobile_operator_code="901", tag="vip", timezone="UTC"
+    )
+    other = Client.objects.create(
+        phone_number="79000000003", mobile_operator_code="900", tag="common", timezone="UTC"
+    )
 
     campaign = Newsletter.objects.create(
         start_datetime=timezone.now(),
@@ -56,8 +63,12 @@ def test_campaign_recipients_filters_by_tag_and_phone():
 @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
 @pytest.mark.django_db
 def test_start_campaign_creates_messages_and_marks_sent():
-    client1 = Client.objects.create(phone_number="79000000001", mobile_operator_code="900", tag="vip", timezone="UTC")
-    client2 = Client.objects.create(phone_number="79000000002", mobile_operator_code="901", tag="vip", timezone="UTC")
+    _client1 = Client.objects.create(
+        phone_number="79000000001", mobile_operator_code="900", tag="vip", timezone="UTC"
+    )
+    _client2 = Client.objects.create(
+        phone_number="79000000002", mobile_operator_code="901", tag="vip", timezone="UTC"
+    )
 
     now = timezone.now()
     campaign = Newsletter.objects.create(
@@ -85,7 +96,9 @@ def test_campaign_stats_endpoint(api_client):
         time_interval_start=now.time(),
         time_interval_end=(now + timedelta(minutes=10)).time(),
     )
-    client = Client.objects.create(phone_number="79000000004", mobile_operator_code="902", tag="stats", timezone="UTC")
+    client = Client.objects.create(
+        phone_number="79000000004", mobile_operator_code="902", tag="stats", timezone="UTC"
+    )
     Message.objects.create(campaign=campaign, client=client, message_text="Hello", status="SENT")
 
     response = api_client.get(reverse("campaign-stats-detail", args=[campaign.id]))

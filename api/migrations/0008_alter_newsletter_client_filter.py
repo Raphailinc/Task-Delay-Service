@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0007_alter_newsletter_client_filter'),
+        ("api", "0007_alter_newsletter_client_filter"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='newsletter',
-            name='client_filter',
+            model_name="newsletter",
+            name="client_filter",
             field=models.JSONField(default=list),
         ),
     ]

@@ -24,7 +24,9 @@ def _enqueue_messages(campaign: Newsletter, recipients: Iterable) -> list[Messag
     return created
 
 
-@shared_task(bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3})
+@shared_task(
+    bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3}
+)
 def send_message_async(self, message_id: int) -> None:
     try:
         message = Message.objects.select_related("campaign", "client").get(pk=message_id)

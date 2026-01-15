@@ -6,13 +6,13 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0005_alter_newsletter_tag'),
+        ("api", "0005_alter_newsletter_tag"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='newsletter',
-            name='client_filter',
+            model_name="newsletter",
+            name="client_filter",
             field=models.CharField(max_length=1000),
         ),
     ]

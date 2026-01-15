@@ -6,25 +6,25 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('api', '0002_newsletter_tag'),
+        ("api", "0002_newsletter_tag"),
     ]
 
     operations = [
         migrations.RenameField(
-            model_name='client',
-            old_name='operator_code',
-            new_name='mobile_operator_code',
+            model_name="client",
+            old_name="operator_code",
+            new_name="mobile_operator_code",
         ),
         migrations.AddField(
-            model_name='message',
-            name='message_text',
-            field=models.TextField(default='Default message text'),
+            model_name="message",
+            name="message_text",
+            field=models.TextField(default="Default message text"),
             preserve_default=False,
         ),
         migrations.AddField(
-            model_name='newsletter',
-            name='client_filter',
-            field=models.CharField(default='Defolt client filter', max_length=255),
+            model_name="newsletter",
+            name="client_filter",
+            field=models.CharField(default="Defolt client filter", max_length=255),
             preserve_default=False,
         ),
     ]

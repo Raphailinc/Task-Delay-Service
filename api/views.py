@@ -39,7 +39,9 @@ class ClientDetailView(generics.RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
-        return Response({"message": "Client successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"message": "Client successfully deleted"}, status=status.HTTP_204_NO_CONTENT
+        )
 
 
 class CampaignListCreateView(generics.ListCreateAPIView):
@@ -70,7 +72,9 @@ class CampaignDetailView(generics.RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
-        return Response({"message": "Campaign successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"message": "Campaign successfully deleted"}, status=status.HTTP_204_NO_CONTENT
+        )
 
 
 class CampaignStartView(APIView):
@@ -94,7 +98,9 @@ class MessageDetailView(generics.RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         self.perform_destroy(instance)
-        return Response({"message": "Message successfully deleted"}, status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {"message": "Message successfully deleted"}, status=status.HTTP_204_NO_CONTENT
+        )
 
 
 class CampaignStatsView(APIView):

@@ -28,7 +28,9 @@ def campaign_recipients(campaign: Newsletter) -> QuerySet:
             if isinstance(item, str):
                 aggregate["phone_numbers"].append(item)
             elif isinstance(item, dict):
-                aggregate["phone_numbers"].extend(_collect([item.get("phone_number"), item.get("phone")]))
+                aggregate["phone_numbers"].extend(
+                    _collect([item.get("phone_number"), item.get("phone")])
+                )
                 aggregate["tags"].extend(_collect([item.get("tag")]))
                 aggregate["operator_codes"].extend(
                     _collect([item.get("mobile_operator_code"), item.get("operator_code")])
