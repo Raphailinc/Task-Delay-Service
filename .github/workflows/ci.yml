@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: task_delay
+          POSTGRES_USER: task_delay
+          POSTGRES_PASSWORD: task_delay
+        options: >-
+          --health-cmd "pg_isready -U task_delay"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 55432:5432
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Lint
+        run: |
+          ruff check .
+          black --check .
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql://task_delay:task_delay@localhost:55432/task_delay
+          DJANGO_DEBUG: "false"
+        run: |
+          python manage.py migrate
+          pytest
