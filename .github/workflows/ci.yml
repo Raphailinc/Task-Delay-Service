@@ -42,4 +42,4 @@ jobs:
           DJANGO_DEBUG: "false"
         run: |
           python manage.py migrate
-          pytest
+          pytest --cov=api --cov=Work --cov-report=term-missing
