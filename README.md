@@ -1,4 +1,5 @@
 ![CI](https://github.com/Raphailinc/Task-Delay-Service/actions/workflows/ci.yml/badge.svg)
+![Coverage](https://img.shields.io/codecov/c/github/Raphailinc/Task-Delay-Service?label=coverage)
 
 # Task Delay Service
 
@@ -79,6 +80,29 @@ pytest
 - Линт/формат: `ruff check .`, `black --check .`
 - Тесты: `pytest` (SQLite по умолчанию), в CI — Postgres
 - CI: GitHub Actions (`ci.yml`) запускает lint + tests.
+
+## Интеграция
+Пример вызова API из Python (requests):
+```python
+import requests
+
+base = "http://localhost:8000/api"
+client = {
+    "phone_number": "79000000001",
+    "mobile_operator_code": "900",
+    "tag": "vip",
+    "timezone": "UTC",
+}
+requests.post(f"{base}/clients", json=client, timeout=5).raise_for_status()
+
+campaign = {
+    "start_datetime": "2024-01-01T10:00:00Z",
+    "end_datetime": "2024-01-01T12:00:00Z",
+    "text_message": "Hello!",
+}
+resp = requests.post(f"{base}/newsletters", json=campaign, timeout=5)
+print(resp.json())
+```
 
 ## Полезно знать
 - `.gitignore` исключает виртуалки, логи и артефакты сборки.
