@@ -9,6 +9,7 @@ kombu==5.3.4
 psycopg2-binary==2.9.9
 redis==5.0.3
 requests==2.31.0
+djangorestframework-simplejwt==5.3.1
 PyJWT==2.8.0
 pytest==7.4.4
 pytest-django==4.7.0

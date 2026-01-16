@@ -17,16 +17,14 @@ services:
     ports:
       - "6379:6379"
 
-  api:
+  migrate:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
-    ports:
-      - "8000:8000"
-    volumes:
-      - .:/app
+    entrypoint: ["/app/docker/entrypoint.sh"]
+    command: ["python", "manage.py", "migrate", "--noinput"]
     depends_on:
       - db
-      - redis
+    volumes:
+      - .:/app
     env_file:
       - .env
     environment:
@@ -34,12 +32,53 @@ services:
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
 
+  api:
+    build: .
+    entrypoint: ["/app/docker/entrypoint.sh"]
+    command: ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      - db
+      - redis
+      - migrate
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:12345@db:5432/service
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1
+
   worker:
     build: .
-    command: celery -A Work worker -l info
+    entrypoint: ["/app/docker/entrypoint.sh"]
+    command: ["celery", "-A", "Work", "worker", "-l", "info"]
     depends_on:
       - redis
       - db
+      - migrate
+    volumes:
+      - .:/app
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://postgres:12345@db:5432/service
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+  beat:
+    build: .
+    entrypoint: ["/app/docker/entrypoint.sh"]
+    command: ["celery", "-A", "Work", "beat", "-l", "info"]
+    depends_on:
+      - redis
+      - db
+      - migrate
+    volumes:
+      - .:/app
     env_file:
       - .env
     environment:

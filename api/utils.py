@@ -1,7 +1,10 @@
 import logging
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
 from typing import Iterable, Set
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from django.db.models import Q, QuerySet
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from .models import Client, Newsletter
@@ -17,9 +20,16 @@ def _collect(value: Iterable) -> Set[str]:
     return {str(item) for item in value if item}
 
 
+def _as_zoneinfo(tz_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(tz_name)
+    except ZoneInfoNotFoundError:
+        logger.warning("Unknown timezone %s, falling back to settings.TIME_ZONE", tz_name)
+        return timezone.get_default_timezone()
+
+
 def campaign_recipients(campaign: Newsletter) -> QuerySet:
-    """Return a queryset of clients that match campaign filters and tag."""
-    filters = Q()
+    """Return a queryset of clients that match campaign filters without widening the audience."""
     filter_data = campaign.client_filter or {}
 
     if isinstance(filter_data, list):
@@ -47,29 +57,48 @@ def campaign_recipients(campaign: Newsletter) -> QuerySet:
     if campaign.tag:
         tags.add(str(campaign.tag))
 
-    queryset = Client.objects.all()
+    if phone_numbers:
+        queryset = Client.objects.filter(phone_number__in=phone_numbers)
+        if tags:
+            queryset = queryset.filter(tag__in=tags)
+        if operator_codes:
+            queryset = queryset.filter(mobile_operator_code__in=operator_codes)
+        return queryset.distinct()
 
     if tags:
-        filters &= Q(tag__in=tags)
-    if operator_codes:
-        filters &= Q(mobile_operator_code__in=operator_codes)
-    if filters:
-        queryset = queryset.filter(filters)
+        queryset = Client.objects.filter(tag__in=tags)
+        if operator_codes:
+            queryset = queryset.filter(mobile_operator_code__in=operator_codes)
+        return queryset.distinct()
 
-    if phone_numbers:
-        queryset = queryset | Client.objects.filter(phone_number__in=phone_numbers)
-
-    return queryset.distinct()
+    return Client.objects.none()
 
 
-def within_sending_window(campaign: Newsletter) -> bool:
-    """Check if now is inside campaign dates and time interval."""
-    now = timezone.localtime()
-    if not (campaign.start_datetime <= now <= campaign.end_datetime):
-        return False
+def calculate_planned_send_at(campaign: Newsletter, client: Client):
+    """Calculate the first allowed send datetime for the client in their timezone."""
+    tz = _as_zoneinfo(client.timezone)
+    now_local = timezone.localtime(timezone.now(), tz)
+    start_local = timezone.localtime(campaign.start_datetime, tz)
+    start_from = max(start_local, now_local)
+    end_local = timezone.localtime(campaign.end_datetime, tz)
 
-    if campaign.time_interval_start <= campaign.time_interval_end:
-        return campaign.time_interval_start <= now.time() <= campaign.time_interval_end
+    date_cursor = start_from.date()
+    max_date = end_local.date() + timedelta(days=1)
 
-    # Handles overnight window (e.g., 22:00 - 06:00)
-    return now.time() >= campaign.time_interval_start or now.time() <= campaign.time_interval_end
+    while date_cursor <= max_date:
+        window_start_dt = datetime.combine(date_cursor, campaign.time_interval_start, tzinfo=tz)
+        window_end_dt = datetime.combine(date_cursor, campaign.time_interval_end, tzinfo=tz)
+        if campaign.time_interval_end < campaign.time_interval_start:
+            window_end_dt += timedelta(days=1)
+
+        if start_from > window_end_dt:
+            date_cursor += timedelta(days=1)
+            continue
+
+        candidate = max(start_from, window_start_dt)
+        if candidate <= window_end_dt and candidate <= end_local:
+            return candidate.astimezone(dt_timezone.utc)
+
+        date_cursor += timedelta(days=1)
+
+    return None
