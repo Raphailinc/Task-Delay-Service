@@ -1,5 +1,5 @@
 ![CI](https://github.com/Raphailinc/Task-Delay-Service/actions/workflows/ci.yml/badge.svg)
-![Coverage](https://img.shields.io/codecov/c/github/Raphailinc/Task-Delay-Service?label=coverage)
+![Coverage](https://raw.githubusercontent.com/Raphailinc/Task-Delay-Service/main/badges/coverage.svg)
 
 # Task Delay Service
 
