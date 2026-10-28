@@ -19,7 +19,7 @@ class ClientSerializer(serializers.ModelSerializer):
     def validate_timezone(self, value):
         try:
             ZoneInfo(value)
-        except ZoneInfoNotFoundError:
+        except (ZoneInfoNotFoundError, ValueError):
             raise serializers.ValidationError("Неизвестный часовой пояс.") from None
         return value
 
@@ -39,9 +39,9 @@ class NewsletterSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Время окончания должно быть больше времени начала.")
 
         client_filter = (
-            attrs.get("client_filter") or getattr(self.instance, "client_filter", {}) or {}
+            attrs.get("client_filter", getattr(self.instance, "client_filter", {})) or {}
         )
-        tag = attrs.get("tag") or getattr(self.instance, "tag", "")
+        tag = attrs.get("tag", getattr(self.instance, "tag", ""))
         phone_numbers = []
         tags = []
         if isinstance(client_filter, dict):
@@ -60,26 +60,50 @@ class NewsletterSerializer(serializers.ModelSerializer):
 
         normalized = {"phone_numbers": [], "tags": [], "operator_codes": []}
 
+        def normalize_item(item):
+            if not isinstance(item, (str, int)) or isinstance(item, bool):
+                raise serializers.ValidationError(
+                    "Значения фильтра должны быть строками или числами."
+                )
+            return str(item).strip()
+
         if isinstance(value, dict):
+            if set(value) - set(normalized):
+                raise serializers.ValidationError("Неизвестное поле client_filter.")
             for key in ("phone_numbers", "tags", "operator_codes"):
-                if key in value and isinstance(value[key], (list, tuple)):
-                    normalized[key] = [str(item) for item in value[key] if item]
+                if key in value:
+                    if not isinstance(value[key], (list, tuple)):
+                        raise serializers.ValidationError(f"{key} должен быть списком.")
+                    normalized[key] = [normalize_item(item) for item in value[key] if item]
             return normalized
 
         if isinstance(value, list):
             for item in value:
                 if isinstance(item, str):
-                    normalized["phone_numbers"].append(item)
+                    if item.strip():
+                        normalized["phone_numbers"].append(item.strip())
                 elif isinstance(item, dict):
+                    if set(item) - {
+                        "phone_number",
+                        "phone",
+                        "tag",
+                        "mobile_operator_code",
+                        "operator_code",
+                    }:
+                        raise serializers.ValidationError("Неизвестное поле client_filter.")
                     phone = item.get("phone_number") or item.get("phone")
                     tag = item.get("tag")
                     operator = item.get("mobile_operator_code") or item.get("operator_code")
                     if phone:
-                        normalized["phone_numbers"].append(str(phone))
+                        normalized["phone_numbers"].append(normalize_item(phone))
                     if tag:
-                        normalized["tags"].append(str(tag))
+                        normalized["tags"].append(normalize_item(tag))
                     if operator:
-                        normalized["operator_codes"].append(str(operator))
+                        normalized["operator_codes"].append(normalize_item(operator))
+                else:
+                    raise serializers.ValidationError(
+                        "Элементы client_filter должны быть строками или объектами."
+                    )
             return normalized
 
         raise serializers.ValidationError("client_filter должен быть словарем или списком.")

@@ -55,3 +55,9 @@ Content-Type: application/json
 ```
 
 Start the campaign with `POST /api/campaigns/<id>/start/`; inspect its statistics at `GET /api/campaigns/<id>/stats/`. Client records are managed under `/api/clients/`. See [`api/urls.py`](api/urls.py) for the route list and [`api/serializers.py`](api/serializers.py) for validation rules.
+
+## Reliability checks
+
+Uses Python 3.11+ and Django 5.2 LTS. Regression tests cover daily windows crossing midnight, malformed recipient filters, invalid timezone names and broker publication failures. A failed broker publish returns the message to `PENDING` for a later dispatcher pass.
+
+The provider adapter in `api/services.py` simulates delivery. A real integration must define provider-side idempotency, request timeouts and delivery reconciliation; the demo does not promise exactly-once external delivery.

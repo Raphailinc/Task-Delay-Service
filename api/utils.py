@@ -23,7 +23,7 @@ def _collect(value: Iterable) -> Set[str]:
 def _as_zoneinfo(tz_name: str) -> ZoneInfo:
     try:
         return ZoneInfo(tz_name)
-    except ZoneInfoNotFoundError:
+    except (ZoneInfoNotFoundError, ValueError):
         logger.warning("Unknown timezone %s, falling back to settings.TIME_ZONE", tz_name)
         return timezone.get_default_timezone()
 
@@ -83,7 +83,10 @@ def calculate_planned_send_at(campaign: Newsletter, client: Client):
     end_local = timezone.localtime(campaign.end_datetime, tz)
 
     date_cursor = start_from.date()
-    max_date = end_local.date() + timedelta(days=1)
+    # After midnight we may still be inside the window that began yesterday.
+    if campaign.time_interval_end < campaign.time_interval_start:
+        date_cursor -= timedelta(days=1)
+    max_date = end_local.date()
 
     while date_cursor <= max_date:
         window_start_dt = datetime.combine(date_cursor, campaign.time_interval_start, tzinfo=tz)

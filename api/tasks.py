@@ -81,7 +81,14 @@ def dispatch_due_messages(self) -> None:
             )
             if not updated:
                 continue
-        send_message_async.delay(message.id)
+        try:
+            send_message_async.delay(message.id)
+        except Exception:
+            # A failed broker publish must remain eligible for the next beat tick.
+            Message.objects.filter(pk=message.id, status=MessageStatus.QUEUED).update(
+                status=MessageStatus.PENDING
+            )
+            raise
 
 
 @shared_task(
