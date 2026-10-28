@@ -10,6 +10,7 @@ from .models import (
     CampaignStatus,
     Message,
     MessageStatus,
+    Newsletter,
 )
 from .services import send_message_to_external_service
 from .utils import calculate_planned_send_at, campaign_recipients
@@ -17,9 +18,13 @@ from .utils import calculate_planned_send_at, campaign_recipients
 logger = logging.getLogger(__name__)
 
 
+@transaction.atomic
 def _refresh_run_status(run: CampaignRun) -> None:
+    # Serialize aggregation with campaign starts and other message completions.
+    campaign = Newsletter.objects.select_for_update().get(pk=run.campaign_id)
+    run = CampaignRun.objects.select_for_update().get(pk=run.id)
     pending_exists = run.messages.filter(
-        status__in=[MessageStatus.PENDING, MessageStatus.QUEUED]
+        status__in=[MessageStatus.PENDING, MessageStatus.QUEUED, MessageStatus.SENDING]
     ).exists()
     failed_exists = run.messages.filter(status=MessageStatus.FAILED).exists()
 
@@ -43,7 +48,6 @@ def _refresh_run_status(run: CampaignRun) -> None:
     if updates:
         run.save(update_fields=updates)
 
-    campaign = run.campaign
     if campaign.active_run_id != run.id:
         return
 
@@ -91,9 +95,7 @@ def dispatch_due_messages(self) -> None:
             raise
 
 
-@shared_task(
-    bind=True, autoretry_for=(Exception,), retry_backoff=True, retry_kwargs={"max_retries": 3}
-)
+@shared_task(bind=True, max_retries=3)
 def send_message_async(self, message_id: int) -> None:
     try:
         message = Message.objects.select_related("campaign", "client", "run").get(pk=message_id)
@@ -101,26 +103,38 @@ def send_message_async(self, message_id: int) -> None:
         logger.warning("Message with id %s does not exist.", message_id)
         return
 
-    with transaction.atomic():
-        message = (
-            Message.objects.select_for_update()
-            .select_related("campaign", "client", "run")
-            .get(pk=message_id)
+    # A compare-and-set claim survives duplicate broker deliveries without holding
+    # a database transaction open while the provider runs. Never revive terminal
+    # messages or bypass the dispatcher for a future PENDING message.
+    claimed = Message.objects.filter(
+        pk=message_id, status=MessageStatus.QUEUED, planned_send_at__lte=timezone.now()
+    ).update(status=MessageStatus.SENDING)
+    if not claimed:
+        return
+
+    planned = calculate_planned_send_at(message.campaign, message.client)
+    if planned is None:
+        Message.objects.filter(pk=message_id).update(status=MessageStatus.FAILED)
+        _refresh_run_status(message.run)
+        return
+    if planned > timezone.now():
+        # A delayed broker delivery may have missed the recipient's daily window.
+        Message.objects.filter(pk=message_id).update(
+            status=MessageStatus.PENDING, planned_send_at=planned
         )
-        if message.status == MessageStatus.SENT:
-            _refresh_run_status(message.run)
-            return
-        if message.status != MessageStatus.QUEUED:
-            message.status = MessageStatus.QUEUED
-            message.save(update_fields=["status"])
+        _refresh_run_status(message.run)
+        return
 
     try:
         send_message_to_external_service(message, message.campaign)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to send message %s: %s", message.id, exc)
-        message.status = MessageStatus.FAILED
+        exhausted = self.request.retries >= self.max_retries
+        message.status = MessageStatus.FAILED if exhausted else MessageStatus.QUEUED
         message.save(update_fields=["status"])
-        raise
+        if exhausted:
+            raise
+        raise self.retry(exc=exc, countdown=2**self.request.retries) from exc
     else:
         message.status = MessageStatus.SENT
         message.save(update_fields=["status"])
@@ -140,10 +154,15 @@ def start_campaign_async(self, run_id: str) -> None:
     recipients = campaign_recipients(campaign)
 
     with transaction.atomic():
+        # Match the lock order used by the start endpoint and status aggregation.
+        campaign = Newsletter.objects.select_for_update().get(pk=campaign.pk)
         run = CampaignRun.objects.select_for_update().select_related("campaign").get(pk=run_id)
-        campaign = run.campaign
 
-        if run.status in {CampaignRunStatus.FINISHED, CampaignRunStatus.FAILED}:
+        if (
+            campaign.active_run_id != run.id
+            or run.started_at is not None
+            or run.status in {CampaignRunStatus.FINISHED, CampaignRunStatus.FAILED}
+        ):
             return
 
         now = timezone.now()

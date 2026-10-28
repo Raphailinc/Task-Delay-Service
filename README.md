@@ -15,6 +15,19 @@ A backend portfolio service for preparing and scheduling message campaigns. It m
 
 ## Run locally
 
+### Try the complete flow without infrastructure
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python scripts/demo.py
+```
+
+The demo obtains a JWT, creates synthetic recipients, starts a campaign through the API, runs eager Celery tasks and prints delivery statistics. It uses a disposable SQLite database and a simulated provider. It removes the database on exit. No Redis, PostgreSQL or external account is needed.
+
+### Run the API and background workers
+
 ```bash
 cp .env.example .env
 # Configure DJANGO_SECRET_KEY and local database credentials.
@@ -54,10 +67,14 @@ Content-Type: application/json
 }
 ```
 
-Start the campaign with `POST /api/campaigns/<id>/start/`; inspect its statistics at `GET /api/campaigns/<id>/stats/`. Client records are managed under `/api/clients/`. See [`api/urls.py`](api/urls.py) for the route list and [`api/serializers.py`](api/serializers.py) for validation rules.
+Creating a campaign automatically schedules its first run. Explicit starts use `POST /api/campaigns/<id>/start/`; inspect its statistics at `GET /api/campaigns/<id>/stats/`. Client records are managed under `/api/clients/`. See [`api/urls.py`](api/urls.py) for the route list and [`api/serializers.py`](api/serializers.py) for validation rules.
 
 ## Reliability checks
 
 Uses Python 3.11+ and Django 5.2 LTS. Regression tests cover daily windows crossing midnight, malformed recipient filters, invalid timezone names and broker publication failures. A failed broker publish returns the message to `PENDING` for a later dispatcher pass.
+
+The worker atomically claims `QUEUED → SENDING` before contacting the provider, so concurrent workers do not enter the same send. A transient provider failure keeps the run active during the three retries; only exhausted retries become terminal. Late deliveries recheck the recipient's daily window. `force_resend` is available after a run ends; it cannot overlap an active run.
+
+Read the [delivery design and failure boundaries](docs/delivery-design.md), then the [regression tests](api/tests/test_delivery_lifecycle.py). CI also runs a two-connection PostgreSQL concurrency test and the complete demo.
 
 The provider adapter in `api/services.py` simulates delivery. A real integration must define provider-side idempotency, request timeouts and delivery reconciliation; the demo does not promise exactly-once external delivery.

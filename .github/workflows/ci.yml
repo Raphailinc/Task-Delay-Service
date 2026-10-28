@@ -45,7 +45,9 @@ jobs:
           DJANGO_DEBUG: "false"
         run: |
           python manage.py migrate
+          python manage.py makemigrations --check --dry-run
           pytest --cov=api --cov=Work --cov-report=term-missing --cov-report=xml
+          python scripts/demo.py
       - name: Audit installed dependencies
         run: |
           python -m pip install --upgrade pip setuptools pip-audit

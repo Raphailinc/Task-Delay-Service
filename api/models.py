@@ -78,6 +78,7 @@ class CampaignRun(models.Model):
 class MessageStatus(models.TextChoices):
     PENDING = "PENDING", "Pending"
     QUEUED = "QUEUED", "Queued"
+    SENDING = "SENDING", "Sending"
     SENT = "SENT", "Sent"
     FAILED = "FAILED", "Failed"
 

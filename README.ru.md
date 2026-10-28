@@ -1,130 +1,85 @@
-![CI](https://github.com/Raphailinc/Task-Delay-Service/actions/workflows/ci.yml/badge.svg)
-![Coverage](https://raw.githubusercontent.com/Raphailinc/Task-Delay-Service/main/badges/coverage.svg)
-
 # Task Delay Service
 
-Рассылки на Django + DRF + Celery. Фильтрация клиентов по тегам/кодам оператора/списку телефонов, контроль временных окон, Docker-компоуз с Postgres/Redis и воркером Celery.
+[![CI](https://github.com/Raphailinc/Task-Delay-Service/actions/workflows/ci.yml/badge.svg)](https://github.com/Raphailinc/Task-Delay-Service/actions/workflows/ci.yml)
+
+[English](README.md) · [Русский](README.ru.md)
+
+Backend-проект рассылок на Django/DRF и Celery: аудитория, часовые пояса, запуски кампаний и журнал доставки каждому получателю.
 
 ## Возможности
-- Планирование рассылки по `start_datetime`/`end_datetime` и дневному интервалу времени.
-- Фильтр получателей: тег кампании, `mobile_operator_code`, список телефонов в `client_filter`.
-- Celery-воркер + Redis (по умолчанию), синхронный режим для тестов через `CELERY_TASK_ALWAYS_EAGER`.
-- Docker Compose: api + worker + Postgres + Redis.
-- Тесты на pytest/DRF, примеры окружения в `.env.example`.
 
-## Quickstart
-```bash
-docker compose up --build
-# API: http://localhost:8000/api
-# Получить JWT: POST http://localhost:8000/api/token/ {"username": "...", "password": "..."}
-```
+- Валидация дат кампании, дневных интервалов и структуры фильтров аудитории.
+- Планирование в часовом поясе получателя с хранением времени в UTC.
+- Атомарный захват сообщения воркером, защита от одновременной повторной отправки и учёт повторов Celery.
+- Повторная проверка временного окна при задержке задачи в брокере.
+- PostgreSQL, Redis, API, worker и beat через Docker Compose.
 
-## Локальный запуск
+## Демо без инфраструктуры
+
 ```bash
 python -m venv .venv
-. .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-cp .env.example .env  # и задайте DJANGO_SECRET_KEY
-python manage.py migrate
-python manage.py runserver
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python scripts/demo.py
 ```
 
-Запуск Celery-воркера (локально):
+Демо получает JWT, создаёт двух синтетических получателей, запускает кампанию через API и выводит статистику. В аудиторию входит один получатель. Celery работает синхронно, провайдер имитирует отправку. Используется временная SQLite-БД, которая удаляется при выходе. Redis, PostgreSQL и внешние аккаунты для демо не нужны; существующая БД не используется.
+
+## API и фоновые процессы через Compose
+
 ```bash
-celery -A Work worker -l info
-celery -A Work beat -l info  # планировщик для отправки due-сообщений
+cp .env.example .env
+# Задайте DJANGO_SECRET_KEY и локальные реквизиты БД.
+docker compose up --build
 ```
 
-## Docker Compose
+API: http://localhost:8000/api/. Создайте пользователя:
+
 ```bash
-docker-compose up --build
+docker compose exec api python manage.py createsuperuser
 ```
-Сервисы: `api` (8000), `worker`, `beat`, `migrate`, `db` (Postgres 16), `redis` (6379). `migrate` и entrypoint применяют миграции перед стартом, `beat` отвечает за периодический опрос due-сообщений. Настройки берутся из `.env` + переменных в `docker-compose.yml`.
 
-## API схемы (пример)
-```bash
-# создать клиента
-POST /api/clients/
-{
-  "phone_number": "79000000001",
-  "mobile_operator_code": "900",
-  "tag": "vip",
-  "timezone": "UTC"
-}
+Получите JWT через `POST /api/token/`, затем передавайте `Authorization: Bearer <access_token>`. И worker, и beat должны работать для запланированной обработки.
 
-# создать рассылку и получить статистику
+## Пример API
+
+Создание кампании автоматически планирует её первый запуск:
+
+```http
 POST /api/campaigns/
-{"text_message": "Hello", "start_datetime": "...", "end_datetime": "...", "time_interval_start": "10:00:00", "time_interval_end": "18:00:00", "tag": "vip"}
-GET  /api/campaigns/<id>/stats/  -> {"sent_messages": 1, "pending_messages": 0}
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{
+  "start_datetime": "2030-01-01T10:00:00Z",
+  "end_datetime": "2030-01-01T18:00:00Z",
+  "time_interval_start": "10:00:00",
+  "time_interval_end": "18:00:00",
+  "text_message": "Hello",
+  "tag": "vip",
+  "client_filter": {"tags": ["vip"]}
+}
 ```
 
-- Запуск кампании: `POST /api/campaigns/<id>/start/` (опционально `force_resend=true`) -> `202 Accepted`. Повторный старт без `force_resend` для запланированных/запущенных кампаний вернёт `409 Conflict`.
-- Планирование отправок происходит в часовом поясе клиента (`Client.timezone`), вычисленный `planned_send_at` хранится в UTC; Celery beat проверяет due-сообщения каждую минуту.
-- Аудитория: при указанных `phone_numbers` отправка идёт только на этот список (теги сужают, но не расширяют аудиторию). Пустые `tag` и `phone_numbers` запрещают запуск.
+Получатели создаются через `POST /api/clients/` с полями `phone_number`, `mobile_operator_code`, `tag`, `timezone`. Статистика: `GET /api/campaigns/<id>/stats/`. Маршруты — в [api/urls.py](api/urls.py), правила входных данных — в [api/serializers.py](api/serializers.py).
 
-## Архитектура
-- `Work/` — Django настройки, Celery конфиг, модели/серилиазоры/вьюхи.
-- `api/` — DRF эндпоинты, фильтры, Celery задачи.
-- `docker-compose.yml` — api + worker + Postgres + Redis; entrypoint применяет миграции.
-- `api/tests/` — pytest + pytest-django проверки сериализаторов, фильтрации и задач.
+`POST /api/campaigns/<id>/start/` запускает кампанию; повторный запуск уже завершённой кампании требует `{"force_resend": true}`. Параллельный запуск активной или запланированной кампании возвращает `409`, в том числе с `force_resend`.
 
-## Переменные окружения
-- `DJANGO_SECRET_KEY` — секретный ключ (обязательно в проде).
-- `DJANGO_DEBUG` — `True/False`.
-- `DJANGO_ALLOWED_HOSTS` — список хостов через запятую (по умолчанию только `localhost,127.0.0.1`).
-- `CORS_ALLOWED_ORIGINS` — список разрешённых Origin через запятую; в продакшене CORS по умолчанию закрыт.
-- `DATABASE_URL` — строка подключения к БД (по умолчанию SQLite).
-- `DJANGO_TIME_ZONE` — часовой пояс (по умолчанию UTC).
-- `CELERY_BROKER_URL` / `CELERY_RESULT_BACKEND` — брокер и backend задач (по умолчанию Redis `redis://localhost:6379/0`).
-- `ACCESS_TOKEN_LIFETIME` / `REFRESH_TOKEN_LIFETIME` задаются через SimpleJWT (см. Work/settings.py).
+## Состояния и надёжность
 
-### Production settings
-- DRF по умолчанию требует аутентификацию (`IsAuthenticated`), используйте JWT (`/api/token/`, `/api/token/refresh/`).
-- Укажите `DJANGO_ALLOWED_HOSTS` и `CORS_ALLOWED_ORIGINS` для боевого домена, не используйте `CORS_ALLOW_ALL_ORIGINS` в проде.
-- Настройте секреты (`DJANGO_SECRET_KEY`, пароли БД/Redis) через env, не храните значения по умолчанию.
-- Celery beat должен быть запущен вместе с worker: `celery -A Work beat -l info`.
+`PENDING → QUEUED → SENDING → SENT`. Условное обновление БД позволяет только одному воркеру перейти в `SENDING`. Транзакция не удерживается во время вызова провайдера. При временной ошибке состояние возвращается в `QUEUED` для максимум трёх повторов после первой попытки; при исчерпании попыток становится `FAILED`. Задержанная задача ждёт следующего допустимого дневного окна, а завершившаяся кампания не отправляется.
 
-## Тесты
+[Разбор архитектуры, диаграмма и границы восстановления](docs/delivery-design.md) · [Регрессионные тесты](api/tests/test_delivery_lifecycle.py).
+
+## Проверки
+
 ```bash
-pytest
+python -m pytest
+ruff check .
+black --check .
+python manage.py makemigrations --check --dry-run
 ```
 
-## Quality
-- Линт/формат: `ruff check .`, `black --check .`
-- Тесты: `pytest` (SQLite по умолчанию), в CI — Postgres
-- CI: GitHub Actions (`ci.yml`) запускает lint + tests.
+Требуются Python 3.11+ и Django 5.2 LTS. Локальные тесты используют SQLite, если не задан DATABASE_URL. CI запускает PostgreSQL, включая проверку двух одновременных соединений, и полное демо. Проверка конкуренции явно пропускается на SQLite.
 
-## Интеграция
-Пример вызова API из Python (requests):
-```python
-import requests
-
-base = "http://localhost:8000/api"
-client = {
-    "phone_number": "79000000001",
-    "mobile_operator_code": "900",
-    "tag": "vip",
-    "timezone": "UTC",
-}
-requests.post(f"{base}/clients/", json=client, timeout=5).raise_for_status()
-
-campaign = {
-    "start_datetime": "2024-01-01T10:00:00Z",
-    "end_datetime": "2024-01-01T12:00:00Z",
-    "text_message": "Hello!",
-    "time_interval_start": "10:00:00",
-    "time_interval_end": "18:00:00",
-    "tag": "vip",
-}
-resp = requests.post(f"{base}/newsletters", json=campaign, timeout=5)
-print(resp.json())
-```
-
-## Полезно знать
-- `.gitignore` исключает виртуалки, логи и артефакты сборки.
-- Старый `celery_config.py` проксирует к `Work.celery` для совместимости, используйте `celery -A Work worker`.
-
-## Проверки надёжности
-
-Используются Python 3.11+ и Django 5.2 LTS. Добавлены проверки ночных интервалов, структуры фильтров аудитории, некорректных часовых поясов и сбоя публикации в брокер. При ошибке брокера сообщение возвращается в `PENDING` для следующего прохода диспетчера. Адаптер `api/services.py` имитирует отправку; реальный провайдер требует отдельного протокола идемпотентности и сверки доставки.
+Провайдер в `api/services.py` — симулятор. Для реальной доставки нужны ключи идемпотентности провайдера, тайм-ауты и сверка неопределённых результатов. Падение процесса в состоянии `SENDING` требует сверки перед повтором. Гарантия exactly-once для внешних сообщений не заявляется. Аутентифицированные пользователи работают в общем операторском пространстве; изоляции арендаторов здесь нет.

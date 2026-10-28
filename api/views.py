@@ -119,6 +119,11 @@ class CampaignStartView(APIView):
 
         with transaction.atomic():
             campaign = get_object_or_404(Newsletter.objects.select_for_update(), pk=pk)
+            if campaign.status in {CampaignStatus.RUNNING, CampaignStatus.SCHEDULED}:
+                return Response(
+                    {"detail": "Wait for the active campaign run before requesting a resend."},
+                    status=status.HTTP_409_CONFLICT,
+                )
             if (
                 campaign.status
                 in {CampaignStatus.RUNNING, CampaignStatus.SCHEDULED, CampaignStatus.FINISHED}

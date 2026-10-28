@@ -18,7 +18,7 @@ def _build_payload(message: Message) -> Dict[str, Any]:
 
 
 def send_message_to_external_service(message: Message, campaign) -> None:
-    """Simulate a send to an external provider and persist status."""
+    """Simulate a provider call; delivery state belongs to the task lifecycle."""
     payload = _build_payload(message)
     logger.info("Dispatching message %s to provider", message.id)
 
